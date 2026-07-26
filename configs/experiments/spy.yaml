@@ -1,0 +1,8 @@
+# Robustness check on an index ETF. A result that holds on one stock but not on
+# the index is a property of that stock, not of the method.
+extends: ../default.yaml
+
+run_name: SPY
+data:
+  ticker: SPY
+  benchmark_ticker: null

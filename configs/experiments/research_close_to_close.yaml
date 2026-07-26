@@ -1,0 +1,20 @@
+# RESEARCH ONLY — NOT EXECUTABLE.
+#
+# Close-to-close is the standard research convention: predict Close(t+1) > Close(t)
+# and assume the position is taken at the close of t. You cannot actually trade at
+# the same close you used to make the decision, so no number produced by this
+# config describes an achievable result.
+#
+# It is kept because it is the convention most published work uses, which makes it
+# the right comparison point — and because the difference between it and the
+# default is itself informative.
+extends: ../default.yaml
+
+run_name: AAPL-research-close-to-close
+
+labels:
+  target_definition: close_to_close
+
+backtest:
+  execution_mode: close_to_close   # cost charged on position CHANGES, not per session
+  one_way_cost_bps: 5.0

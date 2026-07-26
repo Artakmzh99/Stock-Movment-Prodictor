@@ -1,0 +1,30 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+
+# Data and run outputs are reproducible from config; the manifests record their
+# hashes. Keep data/raw locally to reproduce a published number byte-for-byte.
+data/raw/*
+data/interim/*
+data/processed/*
+!data/**/.gitkeep
+artifacts/runs/*
+!artifacts/runs/.gitkeep
+
+.ipynb_checkpoints/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+.DS_Store
+.idea/
+.vscode/
+
+# Local development-tool settings
+.claude/

@@ -1,0 +1,6 @@
+# Robustness check on a second large-cap name.
+extends: ../default.yaml
+
+run_name: MSFT
+data:
+  ticker: MSFT

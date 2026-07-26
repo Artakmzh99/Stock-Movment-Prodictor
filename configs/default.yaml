@@ -1,0 +1,83 @@
+# Default configuration — the executable research setup.
+#
+# The default target and execution model describe a trade that could actually be
+# placed: decide after the close of session t, enter at the open of t+1, exit at
+# the close of t+1. Every active session is therefore a complete round trip and
+# pays a round-trip cost.
+#
+# Nothing that affects a result may be hard-coded in the source; it belongs here.
+# Unknown keys are rejected, and incoherent combinations fail at load time.
+
+random_seed: 42
+run_name: null
+
+data:
+  ticker: AAPL
+  benchmark_ticker: SPY
+  start_date: "2010-01-01"
+  end_date: null              # null == through the last completed session
+  interval: "1d"
+  auto_adjust: true           # always explicit: yfinance has changed this default before
+  drop_last_incomplete: true  # calendar-aware; only drops a still-forming session
+  min_rows: 1000              # required *after* feature warm-up and labelling
+  exchange: XNYS
+  deduplicate_identical_rows: true
+
+features:
+  return_windows: [1, 2, 3, 5, 10, 20]
+  momentum_windows: [5, 10, 20]     # independent of volatility_windows
+  sma_windows: [5, 10, 20, 50]
+  volatility_windows: [5, 10, 20]
+  positive_day_windows: [5, 10]
+  volume_window: 20
+  use_benchmark_features: false     # add only after the simple model works
+  benchmark_windows: [1, 5]
+  benchmark_rolling_window: 20
+  max_benchmark_join_loss: 0.02     # fail rather than silently drop many sessions
+
+labels:
+  horizon: 1
+  target_definition: open_to_close  # Close(t+1)/Open(t+1)-1 — the executable target
+
+split:
+  train_fraction: 0.60
+  validation_fraction: 0.20         # train+validation == the development window
+  test_fraction: 0.20               # sealed until `final-test`
+  walk_forward_splits: 5
+  gap: 1                            # must be >= horizon
+
+threshold:
+  classification_value: 0.50        # probability -> predicted label, for metrics
+  trading_value: 0.55               # probability -> position, for the backtest
+  tune_classification_threshold: false
+  tune_trading_threshold: false
+  objective: balanced_accuracy
+
+backtest:
+  execution_mode: next_open         # must match labels.target_definition
+  round_trip_cost_bps: 10.0         # charged on EVERY active session
+  one_way_cost_bps: 5.0             # used only by close_to_close mode
+  allow_short: false
+  short_threshold: 0.45
+  trading_days_per_year: 252
+  risk_free_rate_annual: 0.0
+
+selection:
+  families: [logistic, hist_gradient_boosting]
+  include_lstm: false               # requires TensorFlow; see lstm_aapl.yaml
+  min_balanced_accuracy_margin: 0.01
+  min_fold_wins: 4                  # of walk_forward_splits
+  min_roc_auc: 0.50
+  min_mcc: 0.0
+  include_random_baseline: true
+
+statistics:
+  confidence_level: 0.95
+  bootstrap_samples: 2000
+  bootstrap_block_length: 20        # preserves short-range autocorrelation
+  bootstrap_seed: 42
+
+paths:
+  data_raw: data/raw
+  data_processed: data/processed
+  runs: artifacts/runs

@@ -1,0 +1,20 @@
+# FROZEN REPRODUCTION CONFIG for the results published in README.md.
+#
+# `end_date` is explicit and pinned. The default config uses end_date: null, which
+# means "through the last completed session" — so it produces different numbers
+# every day and cannot reproduce a published table. This file exists so the README
+# is verifiable rather than merely plausible.
+#
+# Reproduce with:
+#   uv run stock-movement run-all --config configs/reproduction/readme_aapl_2026_07.yaml
+#
+# Note: an explicit historical end_date also means the final bar is a completed
+# session and is kept (see market_calendar.decide_partial_bar).
+extends: ../default.yaml
+
+run_name: readme-aapl-2026-07
+
+data:
+  ticker: AAPL
+  start_date: "2010-01-01"
+  end_date: "2026-07-01"

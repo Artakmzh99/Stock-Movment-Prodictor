@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # No CI job may reach live market data. Every test runs on synthetic data with a
+  # mocked clock, so results cannot depend on what the market did today.
+  STOCK_MOVEMENT_OFFLINE: "1"
+
+jobs:
+  quality:
+    name: lint, types, tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install dependencies (locked)
+        # --frozen fails if uv.lock is out of date with pyproject.toml, so a
+        # dependency change cannot land without the lock file that pins it.
+        run: uv sync --frozen --extra dev
+
+      - name: Ruff format
+        run: uv run ruff format --check .
+
+      - name: Ruff lint
+        run: uv run ruff check .
+
+      - name: Mypy (strict)
+        run: uv run mypy src
+
+      - name: Tests with coverage
+        # The `slow` marker covers TensorFlow training, excluded here and run in
+        # the optional job below. Sequence-construction tests are not marked slow
+        # and therefore always run.
+        run: >-
+          uv run pytest -m "not slow"
+          --cov=stock_movement
+          --cov-report=term-missing
+          --cov-report=xml
+          --cov-fail-under=90
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          if-no-files-found: warn
+
+  lstm:
+    name: optional LSTM phase
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # TensorFlow is a large download; run it on demand and on a schedule rather
+    # than blocking every push.
+    if: >-
+      github.event_name == 'schedule' ||
+      contains(github.event.head_commit.message, '[lstm]')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install dependencies with the LSTM extra
+        run: uv sync --frozen --all-extras
+
+      - name: Run slow tests
+        env:
+          TF_CPP_MIN_LOG_LEVEL: "3"
+        run: uv run pytest -m slow

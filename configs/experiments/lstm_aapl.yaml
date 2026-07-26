@@ -1,0 +1,12 @@
+# Adds the optional LSTM as a third candidate family.
+# Requires TensorFlow:  uv sync --all-extras
+#
+# The LSTM competes on the same development folds as everything else and wins only
+# if it ranks first. Complexity rank 3 means it loses every exact tie.
+extends: ../default.yaml
+
+run_name: AAPL-with-lstm
+
+selection:
+  families: [logistic, hist_gradient_boosting]
+  include_lstm: true

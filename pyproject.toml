@@ -1,0 +1,128 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stock-movement-predictor"
+version = "2.0.0"
+description = "Next-session stock direction classification with development-only model selection, a locked one-time final test, executable intraday cost modelling and reproducible artifacts"
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+license = { text = "MIT" }
+
+# Bounded versions: an unbounded upper bound makes "reproducible" a claim rather
+# than a property. The exact resolved set lives in uv.lock.
+dependencies = [
+    "yfinance>=0.2.40,<1.6",
+    "pandas>=2.1,<3.0",
+    "numpy>=1.26,<3.0",
+    "scikit-learn>=1.4,<2.0",
+    "scipy>=1.11,<2.0",
+    "matplotlib>=3.8,<4.0",
+    "pyarrow>=15.0,<23.0",
+    "PyYAML>=6.0,<7.0",
+    "pydantic>=2.6,<3.0",
+    "joblib>=1.3,<2.0",
+    "tabulate>=0.9,<1.0",
+    "exchange-calendars>=4.5,<6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0,<10.0",
+    "pytest-cov>=4.1,<8.0",
+    "hypothesis>=6.98,<7.0",
+    "ruff>=0.6,<1.0",
+    "mypy>=1.9,<2.0",
+    "pandas-stubs>=2.1,<3.0",
+    "types-PyYAML>=6.0,<7.0",
+    "pre-commit>=3.6,<5.0",
+]
+lstm = ["tensorflow>=2.16,<3.0"]
+
+[project.scripts]
+stock-movement = "stock_movement.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+pythonpath = ["."]
+markers = [
+    "slow: trains a real model (LSTM/TensorFlow); excluded from the fast gate",
+    "network: requires live market data; never run in CI",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning:keras.*",
+    "ignore::DeprecationWarning:tensorflow.*",
+]
+
+[tool.coverage.run]
+source = ["stock_movement"]
+omit = ["*/lstm.py"]  # exercised only under the `slow` marker, which CI excludes
+
+[tool.coverage.report]
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "except ImportError:",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+src = ["src", "tests"]
+# Notebooks are exploratory and intentionally use a looser style; the pipeline
+# logic they demonstrate lives in src/ and is linted there.
+extend-exclude = ["notebooks", ".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM", "RUF", "PD"]
+ignore = [
+    "E501",    # line length is enforced by the formatter
+    "PD011",   # .values is flagged over-eagerly on numpy-backed calls
+    "B008",    # function calls in argument defaults (Typer/argparse idiom)
+    "RUF005",  # list concatenation is clearer than unpacking here
+    "SIM108",  # ternaries are not always more readable
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E402"]
+
+[tool.ruff.lint.pep8-naming]
+# `X` for a feature matrix and `X_train`/`X_test` for its splits are the universal
+# scikit-learn convention. Renaming them to satisfy PEP 8 would make this code
+# read less like the ecosystem it lives in, not more.
+extend-ignore-names = ["X", "X_*", "y_*"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src/stock_movement"]
+strict = true
+warn_unreachable = true
+show_error_codes = true
+# Third-party libraries without usable stubs. Their absence is a fact about the
+# ecosystem, not a licence to leave our own code untyped.
+# TensorFlow and sklearn ship no usable stubs, so LSTMClassifier necessarily
+# subclasses `Any`. That is a fact about the ecosystem, not licence to leave our
+# own code untyped — every method in the module is still annotated.
+[[tool.mypy.overrides]]
+module = ["stock_movement.lstm"]
+disallow_subclassing_any = false
+disallow_untyped_calls = false
+
+[[tool.mypy.overrides]]
+module = [
+    "yfinance.*",
+    "sklearn.*",
+    "scipy.*",
+    "matplotlib.*",
+    "exchange_calendars.*",
+    "tensorflow.*",
+    "keras.*",
+    "joblib.*",
+]
+ignore_missing_imports = true

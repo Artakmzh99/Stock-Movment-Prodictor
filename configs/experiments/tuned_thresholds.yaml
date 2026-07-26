@@ -1,0 +1,11 @@
+# Tunes both thresholds on the winner's out-of-fold DEVELOPMENT predictions.
+# Those predictions are out-of-sample for the model that made them and contain no
+# holdout rows, so this is a legitimate place to choose an operating point.
+extends: ../default.yaml
+
+run_name: AAPL-tuned-thresholds
+
+threshold:
+  tune_classification_threshold: true
+  tune_trading_threshold: true
+  objective: balanced_accuracy

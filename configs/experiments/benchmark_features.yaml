@@ -1,0 +1,14 @@
+# Adds SPY-relative features (Group G). Compare against the default run to see
+# whether market-relative information helps at all.
+#
+# The benchmark is aligned by inner join on shared trading sessions; if more than
+# 2% of target sessions would be dropped, the run fails rather than fabricating
+# benchmark prices.
+extends: ../default.yaml
+
+run_name: AAPL-benchmark-features
+
+features:
+  use_benchmark_features: true
+  benchmark_windows: [1, 5]
+  benchmark_rolling_window: 20
