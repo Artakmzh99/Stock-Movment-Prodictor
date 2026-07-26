@@ -26,7 +26,15 @@ predict time. It never uses a row at or after the row being predicted.
 leak by itself, but combined with a validation split taken from the *end* of the
 array it silently mixes regimes; both are disabled here.
 
-TensorFlow is an optional dependency: ``pip install -e ".[lstm]"``.
+TensorFlow is an optional dependency: ``uv sync --all-extras``.
+
+**Where the dependency is checked.** ``_import_tensorflow`` is the single place
+importability is determined, and both ``tensorflow_available`` (used by
+``selection`` to skip the family) and ``require_tensorflow`` (used at runtime)
+route through it, so they cannot disagree. ``build_lstm_estimator`` checks
+eagerly, because a factory should not hand back a model that is certain to fail;
+``LSTMClassifier.__init__`` does not, because scikit-learn requires it to store
+parameters only so that ``clone`` keeps working.
 """
 
 from __future__ import annotations
@@ -39,16 +47,48 @@ from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler
 
+TENSORFLOW_MISSING_MESSAGE = (
+    "the LSTM model needs TensorFlow, which is an optional dependency.\n"
+    '  uv sync --all-extras   (or: pip install -e ".[lstm]")'
+)
 
-def _require_tensorflow() -> Any:
+
+def _import_tensorflow() -> tuple[Any | None, BaseException | None]:
+    """Attempt the import once, and report the outcome rather than deciding it.
+
+    This is the **single** place TensorFlow's importability is determined.
+    ``tensorflow_available`` and ``require_tensorflow`` both route through it, so
+    the "can we?" answer and the "then do it" answer cannot diverge.
+
+    They previously did diverge: the availability check caught ``Exception`` while
+    the runtime check caught only ``ImportError``. TensorFlow really does fail at
+    import with ``RuntimeError`` or ``OSError`` on protobuf and NumPy ABI
+    mismatches, so in those environments the family was correctly skipped but a
+    direct ``fit`` leaked a raw error instead of the actionable message below.
+
+    Catching ``BaseException`` is deliberate and not over-broad here: for our
+    purposes "TensorFlow is unusable" is the same answer however it fails, and a
+    partially-initialised TF module is worse than none.
+    """
     try:
         import tensorflow as tf
-    except ImportError as exc:  # pragma: no cover - depends on the environment
-        raise ImportError(
-            "the LSTM model needs TensorFlow, which is an optional dependency.\n"
-            '  pip install -e ".[lstm]"   (or: pip install tensorflow)'
-        ) from exc
-    return tf
+    except BaseException as exc:
+        return None, exc
+    return tf, None
+
+
+def tensorflow_available() -> bool:
+    """Whether TensorFlow can actually be imported in this environment."""
+    module, _ = _import_tensorflow()
+    return module is not None
+
+
+def require_tensorflow() -> Any:
+    """Return the TensorFlow module, or raise a clear, actionable ImportError."""
+    module, error = _import_tensorflow()
+    if module is None:
+        raise ImportError(TENSORFLOW_MISSING_MESSAGE) from error
+    return module
 
 
 def make_sequences(values: np.ndarray, lookback: int) -> np.ndarray:
@@ -100,7 +140,7 @@ class LSTMClassifier(BaseEstimator, ClassifierMixin):
 
     # -- internals --------------------------------------------------------
     def _build_network(self, n_features: int) -> Any:
-        tf = _require_tensorflow()
+        tf = require_tensorflow()
         tf.keras.utils.set_random_seed(self.random_state)
 
         layers = [tf.keras.layers.Input(shape=(self.lookback, n_features))]
@@ -130,7 +170,7 @@ class LSTMClassifier(BaseEstimator, ClassifierMixin):
 
     # -- sklearn API ------------------------------------------------------
     def fit(self, X: pd.DataFrame, y: Any) -> LSTMClassifier:
-        tf = _require_tensorflow()
+        tf = require_tensorflow()
         y = np.asarray(y).astype(int)
         self.classes_ = np.array([0, 1])
         self.n_features_in_ = X.shape[1]
@@ -198,6 +238,24 @@ class LSTMClassifier(BaseEstimator, ClassifierMixin):
 
 
 def build_lstm_estimator(params: dict[str, Any], random_state: int = 42) -> LSTMClassifier:
+    """Factory entry point for the LSTM family.
+
+    This checks for TensorFlow **eagerly**, unlike ``LSTMClassifier.__init__``.
+    The two boundaries have different jobs:
+
+    * ``build_lstm_estimator`` exists only to hand back a model that is about to be
+      fitted, so returning an object guaranteed to fail later is strictly worse
+      than refusing now — the traceback would point at ``fit`` rather than at the
+      missing dependency.
+    * ``LSTMClassifier.__init__`` must stay side-effect free and store parameters
+      only. That is scikit-learn's estimator contract, and ``sklearn.base.clone``
+      (used per fold in ``selection``) depends on it. Importing TensorFlow there
+      would break cloning and ``get_params``.
+
+    So ``build_model("lstm")`` fails fast, while constructing the class directly
+    still works and defers the error to ``fit``.
+    """
+    require_tensorflow()
     defaults: dict[str, Any] = {"lookback": 20, "random_state": random_state}
     defaults.update(params or {})
     if "units" in defaults and isinstance(defaults["units"], list):

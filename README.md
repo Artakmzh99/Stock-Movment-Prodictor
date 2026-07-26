@@ -728,9 +728,14 @@ uv run mypy src
 uv run pytest -m "not slow" --cov=stock_movement --cov-fail-under=90
 ```
 
-Current state: **433 tests passing, 95% coverage, ruff clean, mypy strict clean**
-across 25 modules. No test touches the network — everything runs on synthetic data
-with a mocked clock, so the guarantees hold deterministically.
+Current state: **443 tests passing (447 with the LSTM extra), 95% coverage, ruff
+clean, mypy strict clean** across 25 modules. No test touches the network —
+everything runs on synthetic data with a mocked clock, so the guarantees hold
+deterministically.
+
+The suite passes both **with and without** the optional `lstm` extra. Tests that
+depend on TensorFlow's absence simulate it rather than branching on whether it
+happens to be installed, so neither environment can quietly skip an assertion.
 
 The `slow` marker covers TensorFlow training and is excluded from the fast gate;
 sequence-construction tests are not marked slow and always run. GitHub Actions
@@ -775,7 +780,7 @@ stock-movement-predictor/
 │   ├── pipeline.py               # the two stages
 │   ├── lstm.py                   # optional Keras classifier
 │   └── cli.py                    # command line
-├── tests/                        # 433 tests, no network access
+├── tests/                        # 443 tests, no network access
 ├── notebooks/                    # EDA, features, costs, run comparison
 └── artifacts/runs/<run_id>/      # immutable per-run output
 ```

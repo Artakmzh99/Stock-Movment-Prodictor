@@ -110,12 +110,16 @@ def build_model(family: str, params: dict[str, Any] | None = None, random_state:
 
 
 def lstm_available() -> bool:
-    """Whether the optional LSTM dependency is importable."""
-    try:
-        import tensorflow  # noqa: F401
-    except Exception:
-        return False
-    return True
+    """Whether the optional LSTM dependency is importable.
+
+    Delegates to ``lstm.tensorflow_available`` rather than repeating the import
+    guard, so this check and the runtime requirement in ``lstm.require_tensorflow``
+    share one implementation and cannot disagree about whether TensorFlow is
+    usable. Imported lazily to keep ``models`` cheap to import.
+    """
+    from .lstm import tensorflow_available
+
+    return tensorflow_available()
 
 
 # --------------------------------------------------------------------------

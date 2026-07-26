@@ -66,13 +66,124 @@ def test_unknown_family_is_rejected():
         build_model("crystal_ball", {})
 
 
-def test_lstm_availability_is_reported_honestly():
-    available = lstm_available()
-    assert isinstance(available, bool)
+def test_lstm_availability_reports_a_bool():
+    assert isinstance(lstm_available(), bool)
 
-    if not available:
-        with pytest.raises(ImportError, match="TensorFlow"):
-            build_model(LSTM, {})
+
+@pytest.fixture
+def tensorflow_absent(monkeypatch):
+    """Simulate an environment with no usable TensorFlow.
+
+    Patching the single import helper is what makes these tests deterministic
+    whether or not TensorFlow happens to be installed. The previous version of
+    this test guarded its only assertion behind ``if not lstm_available()``, so it
+    asserted *nothing* on a machine with TensorFlow — which is precisely why the
+    factory/lazy-loading mismatch was not caught until CI, where the extra is not
+    installed.
+    """
+    from stock_movement import lstm as lstm_module
+
+    monkeypatch.setattr(
+        lstm_module,
+        "_import_tensorflow",
+        lambda: (None, ImportError("simulated: no module named 'tensorflow'")),
+    )
+    return lstm_module
+
+
+def _tiny_frame():
+    import pandas as pd
+
+    index = pd.bdate_range("2020-01-01", periods=30)
+    rng = np.random.default_rng(0)
+    X = pd.DataFrame(rng.normal(size=(30, 3)), columns=["a", "b", "c"], index=index)
+    y = pd.Series(rng.integers(0, 2, 30), index=index)
+    return X, y
+
+
+def test_build_model_fails_fast_when_tensorflow_is_absent(tensorflow_absent):
+    """The factory refuses rather than handing back a model doomed to fail on fit."""
+    with pytest.raises(ImportError, match="TensorFlow"):
+        build_model(LSTM, {})
+
+
+def test_lstm_class_is_constructible_without_tensorflow_and_fails_on_fit(tensorflow_absent):
+    """``__init__`` stays side-effect free; the error surfaces at ``fit``.
+
+    scikit-learn requires ``__init__`` to store parameters only, so that
+    ``clone`` and ``get_params`` work — ``selection`` clones an estimator per
+    fold. Importing TensorFlow there would break cloning, so construction must
+    succeed even when the dependency is missing.
+    """
+    from sklearn.base import clone
+
+    from stock_movement.lstm import LSTMClassifier
+
+    model = LSTMClassifier(lookback=5, units=(4,), epochs=1)
+
+    assert model.lookback == 5
+    assert clone(model).get_params() == model.get_params()
+
+    X, y = _tiny_frame()
+    with pytest.raises(ImportError, match="TensorFlow"):
+        model.fit(X, y)
+
+
+def test_availability_and_requirement_never_disagree(tensorflow_absent):
+    """One implementation backs both, so they cannot give conflicting answers."""
+    from stock_movement.lstm import require_tensorflow, tensorflow_available
+
+    assert tensorflow_available() is False
+    assert lstm_available() is False
+    with pytest.raises(ImportError, match="TensorFlow"):
+        require_tensorflow()
+
+
+def test_a_non_import_error_still_yields_the_actionable_message(monkeypatch):
+    """Regression test for the divergence between the two checks.
+
+    TensorFlow fails at import with ``RuntimeError``/``OSError`` on protobuf and
+    NumPy ABI mismatches. The availability check caught those; the runtime check
+    caught only ``ImportError`` and leaked the raw error. Both must now agree and
+    report the install hint.
+    """
+    from stock_movement import lstm as lstm_module
+
+    monkeypatch.setattr(
+        lstm_module,
+        "_import_tensorflow",
+        lambda: (None, RuntimeError("protobuf version mismatch")),
+    )
+
+    assert lstm_module.tensorflow_available() is False
+    assert lstm_available() is False
+
+    with pytest.raises(ImportError, match="TensorFlow") as excinfo:
+        lstm_module.require_tensorflow()
+    # The underlying cause is preserved for debugging, not swallowed.
+    assert isinstance(excinfo.value.__cause__, RuntimeError)
+
+
+def test_selection_skips_the_lstm_family_when_tensorflow_is_absent(tensorflow_absent):
+    """The pipeline must degrade cleanly, never call the failing factory."""
+    from stock_movement.config import config_from_dict
+    from stock_movement.selection import build_candidates
+    from tests.conftest import small_config_payload
+
+    config = config_from_dict(
+        small_config_payload(selection={"families": ["logistic"], "include_lstm": True})
+    )
+
+    families = {c.model_name for c in build_candidates(config)}
+    assert families == {"logistic"}
+
+
+@pytest.mark.skipif(not lstm_available(), reason="requires TensorFlow")
+def test_build_model_returns_an_lstm_when_tensorflow_is_present():
+    """The other half of the contract, asserted rather than assumed."""
+    from stock_movement.lstm import LSTMClassifier
+
+    assert isinstance(build_model(LSTM, {"lookback": 5}), LSTMClassifier)
 
 
 # --------------------------------------------------------------------------
